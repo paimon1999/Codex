@@ -155,19 +155,20 @@ pub fn run() {
                                 let total_completion = stats.get("total_completion_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
                                 let total_cost = stats.get("total_cost").and_then(|v| v.as_f64()).unwrap_or(0.0);
                                 let avg_latency = stats.get("avg_latency_ms").and_then(|v| v.as_u64()).unwrap_or(0);
+                                let total_cached = stats.get("total_cached_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                                let total_reasoning = stats.get("total_reasoning_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
                                 let token_text = format!(
-                                    "Req {} │ In {} │ Out {} │ Cached {} │ {}",
+                                    "Req {} │ In {} │ Out {} │ Cached {} │ Reason {} │ {}",
                                     format_token_count(total),
                                     format_token_count(total_prompt),
                                     format_token_count(total_completion),
                                     format_token_count(total_cached),
+                                    format_token_count(total_reasoning),
                                     format_cost_display(total_cost),
                                 );
                                 let _ = menu_tokens_clone.set_text(&token_text);
 
                                 // 更新 tooltip
-                                let total_cached = stats.get("total_cached_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                                let total_reasoning = stats.get("total_reasoning_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
                                 let tooltip = format!(
                                     "Ucodex Helper\nReq {} │ Err {} │ {}ms │ {}\nIn {} │ Cached {} │ Out {} │ Reason {}",
                                     format_token_count(total),

@@ -1520,7 +1520,7 @@ export function App() {
       disableWatcher: () => watcherAction("disable_watcher"),
       toggleTheme: () => setTheme((current) => (current === "dark" ? "light" : "dark")),
     }),
-    [route, launchForm, settingsForm, settings, removeOwnedData, update, logs, diagnostics, theme, relayFiles, localSessions, selectedProviderSyncTarget],
+    [route, launchForm, settingsForm, settings, removeOwnedData, update, logs, diagnostics, theme, relayFiles, localSessions, selectedProviderSyncTarget, launch],
   );
   const hasUpdate = update?.updateAvailable === true;
 
@@ -3612,16 +3612,18 @@ function formatInterval(ms: number): string {
 
 function formatCost(cost: number): string {
   const abs = Math.abs(cost);
-  if (abs >= 1_000_000) return `${(cost / 1_000_000).toFixed(1)}M Cr`;
-  if (abs >= 1_000) return `${(cost / 1_000).toFixed(1)}K Cr`;
+  if (abs >= 1_000_000_000) return `${(cost / 1_000_000_000).toFixed(2)}B Cr`;
+  if (abs >= 1_000_000) return `${(cost / 1_000_000).toFixed(2)}M Cr`;
+  if (abs >= 1_000) return `${(cost / 1_000).toFixed(2)}K Cr`;
   if (abs >= 1) return `${cost.toFixed(1)} Cr`;
   if (abs >= 0.01) return `${cost.toFixed(2)} Cr`;
   return `${cost.toFixed(4)} Cr`;
 }
 
 function formatTokens(tokens: number): string {
-  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;
-  if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}K`;
+  if (tokens >= 1_000_000_000) return `${(tokens / 1_000_000_000).toFixed(2)}B`;
+  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(2)}M`;
+  if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(2)}K`;
   return String(tokens);
 }
 
@@ -3666,11 +3668,13 @@ function useAutoRefresh(fetch: (silent: boolean) => Promise<void>, defaultInterv
   };
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function Metric({ label, value, hint, tone }: { label: string; value: string; hint?: string; tone?: "ok" | "warn" | "danger" | "muted" }) {
+  const border = tone === "danger" ? "var(--color-destructive, #ef4444)" : tone === "warn" ? "#f59e0b" : tone === "ok" ? "#22c55e" : "var(--color-border, rgba(0,0,0,0.08))";
   return (
-    <div>
-      <span>{label}</span>
-      <strong>{value}</strong>
+    <div style={{ borderColor: border, borderWidth: 1, borderStyle: "solid", borderRadius: 8, padding: "8px 10px", background: tone === "danger" ? "rgba(239,68,68,0.06)" : tone === "warn" ? "rgba(245,158,11,0.06)" : "var(--color-card, transparent)" }}>
+      <div style={{ fontSize: 11, color: "var(--color-muted-foreground, #6b7280)" }}>{label}</div>
+      <div style={{ fontSize: 18, fontWeight: 600 }}>{value}</div>
+      {hint ? <div style={{ marginTop: 4, fontSize: 11, color: tone === "danger" ? "#ef4444" : tone === "warn" ? "#b45309" : "#6b7280" }}>{hint}</div> : null}
     </div>
   );
 }
@@ -3742,10 +3746,10 @@ const chartColors = {
 const chartBaseOptions = {
   responsive: true,
   maintainAspectRatio: false,
-  interaction: { mode: "index" as const, intersect: false },
+  interaction: { mode: "nearest" as const, intersect: false },
   plugins: {
     legend: { position: "top" as const, labels: { boxWidth: 12, padding: 16, font: { size: 12 } } },
-    tooltip: { backgroundColor: "rgba(0,0,0,0.8)", padding: 10, cornerRadius: 8 },
+    tooltip: { backgroundColor: "rgba(0,0,0,0.8)", padding: 10, cornerRadius: 8, position: "nearest" as const },
   },
   scales: {
     x: { grid: { display: false }, ticks: { font: { size: 11 } } },
@@ -3753,7 +3757,7 @@ const chartBaseOptions = {
   },
 };
 
-function StatsChartsSection({ historyDays }: { historyDays: number }) {
+function StatsChartsSection({ historyDays, onHistoryDaysChange }: { historyDays: number; onHistoryDaysChange: (days: number) => void }) {
   const [daily, setDaily] = useState<DailyStatsRecord[]>([]);
   const [hourly, setHourly] = useState<HourlyStatsRecord[]>([]);
   const [loading, setLoading] = useState(false);
@@ -3944,7 +3948,7 @@ function ProxyStatsScreen({ stats, actions }: { stats: Record<string, unknown> |
     avg_latency_ms?: number;
     cache_stats?: { hits?: number; misses?: number; hit_rate?: number; size?: number; max_size?: number };
     models?: Record<string, { count?: number; total_tokens?: number; total_cost?: number; total_prompt_tokens?: number; total_completion_tokens?: number; total_cached_tokens?: number; total_reasoning_tokens?: number }>;
-    recent?: Array<{ timestamp?: string; model?: string; prompt_tokens?: number; completion_tokens?: number; cached_tokens?: number; total_tokens?: number; cost_estimate?: number; latency_ms?: number; cached?: boolean }>;
+    recent?: Array<{ timestamp?: string; model?: string; prompt_tokens?: number; completion_tokens?: number; cached_tokens?: number; reasoning_tokens?: number; total_tokens?: number; cost_estimate?: number; latency_ms?: number; cached?: boolean }>;
   };
 
   const cache = extractCacheStats(stats);
@@ -3958,18 +3962,15 @@ function ProxyStatsScreen({ stats, actions }: { stats: Record<string, unknown> |
       <Panel>
         <CardHead title="全局统计" detail={autoRefresh.detailText} />
         <CardContent>
-          <div className="metric-list">
-            <Metric label="总请求数" value={String(s.total_requests ?? 0)} />
-            <Metric label="总错误数" value={String(s.total_errors ?? 0)} />
-            <Metric label="平均延迟" value={`${s.avg_latency_ms ?? 0}ms`} />
-            <Metric label="总费用" value={formatCost(s.total_cost ?? 0)} />
-            <div style={{ gridColumn: "1 / -1", height: 1, background: "hsl(var(--border))", margin: "4px 0" }} />
-            <Metric label="输入 Token" value={formatTokens(s.total_prompt_tokens ?? 0)} />
-            <Metric label="  └ 缓存命中" value={formatTokens(s.total_cached_tokens ?? 0)} />
-            <Metric label="  └ 非缓存" value={formatTokens((s.total_prompt_tokens ?? 0) - (s.total_cached_tokens ?? 0))} />
-            <Metric label="输出 Token" value={formatTokens(s.total_completion_tokens ?? 0)} />
-            <Metric label="推理 Token" value={formatTokens(s.total_reasoning_tokens ?? 0)} />
-            <Metric label="总 Token" value={formatTokens(s.total_tokens ?? 0)} />
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(160px,1fr) minmax(160px,1fr)", gap: 12 }}>
+            <Metric label="总费用" value={formatCost(s.total_cost ?? 0)} hint={(s.total_requests ?? 0) > 0 ? `均值 ${formatCost(((s.total_cost ?? 0) as number) / ((s.total_requests as number) || 1))} / req` : "暂无请求"} tone={((s.total_cost ?? 0) as number) > 1_000_000 ? "warn" : "ok"} />
+            <Metric label="平均延迟" value={`${formatTokens(s.avg_latency_ms ?? 0)}ms`} hint={((s.avg_latency_ms ?? 0) as number) > 5000 ? "偏高，建议检查上游响应" : "正常范围"} tone={((s.avg_latency_ms ?? 0) as number) > 8000 ? "danger" : ((s.avg_latency_ms ?? 0) as number) > 3000 ? "warn" : "ok"} />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(120px,1fr))", gap: 10, marginTop: 10 }}>
+            <Metric label="请求数" value={formatTokens(s.total_requests ?? 0)} />
+            <Metric label="错误数" value={formatTokens(s.total_errors ?? 0)} tone={((s.total_errors ?? 0) as number) > 0 ? "danger" : "ok"} hint={((s.total_requests ?? 0) as number) > 0 ? `错误率 ${((((s.total_errors ?? 0) as number) / ((s.total_requests as number) || 1)) * 100).toFixed(2)}%` : ""} />
+            <Metric label="输入 Token" value={formatTokens(s.total_prompt_tokens ?? 0)} hint={`缓存 ${formatTokens(s.total_cached_tokens ?? 0)}`} />
+            <Metric label="输出 Token" value={formatTokens(s.total_completion_tokens ?? 0)} hint={`推理 ${formatTokens(s.total_reasoning_tokens ?? 0)}`} />
           </div>
           <Toolbar>
             <Button onClick={() => void actions.refreshProxyStats()} variant="outline">
@@ -4000,27 +4001,20 @@ function ProxyStatsScreen({ stats, actions }: { stats: Record<string, unknown> |
         <CardHead title="缓存状态" detail="非流式响应缓存，减少上游请求" />
         <CardContent>
           <div className="metric-list">
-            <Metric label="缓存命中" value={String(cache.hits)} />
-            <Metric label="缓存未命中" value={String(cache.misses)} />
-            <Metric label="命中率" value={`${(cache.hitRate * 100).toFixed(1)}%`} />
-            <Metric label="缓存大小" value={`${cache.size} / ${cache.maxSize}`} />
+            <Metric label="缓存命中" value={formatTokens(cache.hits)} />
+            <Metric label="缓存未命中" value={formatTokens(cache.misses)} />
+            <Metric label="命中率" value={`${(cache.hitRate * 100).toFixed(1)}%`} hint={cache.hitRate <= 0.01 ? "命中率很低，建议检查缓存配置或访问模式" : undefined} tone={cache.hitRate <= 0.01 ? "warn" : "ok"} />
+            <Metric label="缓存大小" value={`${formatTokens(cache.size)} / ${formatTokens(cache.maxSize)}`} />
           </div>
+          {cache.hitRate <= 0.01 ? (
+            <div style={{ marginTop: 8, padding: "8px 10px", borderRadius: 8, background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.25)", fontSize: 12 }}>
+              缓存命中率接近 0%，看起来还没有命中缓存。可先确认：是否启用了缓存、是否命中可缓存路径、以及是否被手动清空。
+            </div>
+          ) : null}
         </CardContent>
       </Panel>
 
-      <Panel>
-        <CardHead title="历史趋势图表" detail="数据持久化在本地 SQLite 中" />
-        <CardContent>
-          <Toolbar>
-            {[7, 14, 30].map(d => (
-              <Button key={d} size="sm" variant={historyDays === d ? "default" : "outline"} onClick={() => setHistoryDays(d)}>
-                {d} 天
-              </Button>
-            ))}
-          </Toolbar>
-        </CardContent>
-      </Panel>
-      <StatsChartsSection historyDays={historyDays} />
+      <StatsChartsSection historyDays={historyDays} onHistoryDaysChange={setHistoryDays} />
 
       {modelEntries.length > 0 ? (
         <Panel>

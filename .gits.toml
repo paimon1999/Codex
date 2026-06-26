@@ -5,7 +5,7 @@ auto_fetch = true
 
 [[remotes]]
 name = "paimon1999"
-url = "https://github.com/paimon1999/Codex.git"
+url = "git@github.com:paimon1999/Codex.git"
 enabled = true
 
 [[remotes]]
