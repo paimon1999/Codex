@@ -1,0 +1,14 @@
+[settings]
+default_branch = "main"
+parallel_push = false
+auto_fetch = true
+
+[[remotes]]
+name = "paimon1999"
+url = "https://github.com/paimon1999/Codex.git"
+enabled = true
+
+[[remotes]]
+name = "cnb"
+url = "https://cnb.cool/paimon/proxy/codex"
+enabled = true
